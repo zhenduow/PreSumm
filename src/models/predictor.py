@@ -146,7 +146,8 @@ class Translator(object):
                     gold_tgt_len = batch.tgt.size(1)
                     self.min_length = gold_tgt_len + 20
                     self.max_length = gold_tgt_len + 60
-                batch_data = self.translate_batch(batch)
+                # batch_data = self.translate_batch(batch)
+                batch_data, batch_prob = self.translate_batch(batch)
                 translations = self.from_batch(batch_data)
 
                 for trans in translations:
@@ -173,6 +174,7 @@ class Translator(object):
                     # self.raw_can_out_file.write(' '.join(pred).strip() + '\n')
                     # self.raw_gold_out_file.write(' '.join(gold).strip() + '\n')
                     self.can_out_file.write(pred_str + '\n')
+                    self.can_out_file.write(str(batch_prob) + '\n')
                     self.gold_out_file.write(gold_str + '\n')
                     self.src_out_file.write(src.strip() + '\n')
                     ct += 1
@@ -231,6 +233,7 @@ class Translator(object):
         src = batch.src
         segs = batch.segs
         mask_src = batch.mask_src
+        tgt = batch.tgt
 
         src_features = self.model.bert(src, segs, mask_src)
         dec_states = self.model.decoder.init_decoder_state(src, src_features, with_cache=True)
@@ -267,10 +270,16 @@ class Translator(object):
         results["scores"] = [[] for _ in range(batch_size)]  # noqa: F812
         results["gold_score"] = [0] * batch_size
         results["batch"] = batch
+        target_prob = 0 # the cumulative generation log probabilities
 
         for step in range(max_length):
-            decoder_input = alive_seq[:, -1].view(1, -1)
+            try:
+                if tgt[:, step].view(1, -1)[0].item() == 0:
+                    break
+            except:
+                break
 
+            decoder_input = alive_seq[:, -1].view(1, -1) 
             # Decoder forward.
             decoder_input = decoder_input.transpose(0,1)
 
@@ -281,12 +290,17 @@ class Translator(object):
             log_probs = self.generator.forward(dec_out.transpose(0,1).squeeze(0))
             vocab_size = log_probs.size(-1)
 
-            if step < min_length:
-                log_probs[:, self.end_token] = -1e20
+            #if step < min_length:
+                #log_probs[:, self.end_token] = -1e20 # evaluation does not enforce min length constraint
+
+            try:
+                target_prob += log_probs[:, tgt[:, step+1][0].item()]
+            except:
+                target_prob += log_probs[:, self.end_token]
 
             # Multiply probs by the beam probability.
             log_probs += topk_log_probs.view(-1).unsqueeze(1)
-
+          
             alpha = self.global_scorer.alpha
             length_penalty = ((5.0 + (step + 1)) / 6.0) ** alpha
 
@@ -329,9 +343,11 @@ class Translator(object):
             # Append last prediction.
             alive_seq = torch.cat(
                 [alive_seq.index_select(0, select_indices),
-                 topk_ids.view(-1, 1)], -1)
+                 tgt[:, step+1].unsqueeze(0)], -1)
 
-            is_finished = topk_ids.eq(self.end_token)
+            #is_finished = topk_ids.eq(self.end_token)
+            is_finished = torch.cuda.ByteTensor(1).fill_(1) if len(tgt[0]) - 2 == step else torch.cuda.ByteTensor(1).fill_(0)
+            is_finished = is_finished.unsqueeze(0)
             if step + 1 == max_length:
                 is_finished.fill_(1)
             # End condition is top beam is finished.
@@ -372,8 +388,7 @@ class Translator(object):
             src_features = src_features.index_select(0, select_indices)
             dec_states.map_batch_fn(
                 lambda state, dim: state.index_select(dim, select_indices))
-
-        return results
+        return results, target_prob.item() / ( len(tgt[0]) - 2 )
 
 
 class Translation(object):
