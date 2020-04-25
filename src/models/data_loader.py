@@ -2,6 +2,7 @@ import bisect
 import gc
 import glob
 import random
+import re
 
 import torch
 
@@ -62,7 +63,7 @@ class Batch(object):
 
 
 
-def load_dataset(args, corpus_type, shuffle):
+def load_dataset(args, corpus_type, shuffle, tokenizer):
     """
     Dataset generator. Don't do extra stuff here, like printing,
     because they will be postponed to the first loading time.
@@ -80,6 +81,18 @@ def load_dataset(args, corpus_type, shuffle):
                     (corpus_type, pt_file, len(dataset)))
         return dataset
 
+    def _lazy_dataset_loader_with_perturbation(pt_file, corpus_type, tokenizer):
+        dataset = torch.load(pt_file)
+        logger.info('Loading %s dataset from %s, number of examples: %d' %
+                    (corpus_type, pt_file, len(dataset)))
+        for i, data in enumerate(dataset): # dataset is a list of dictionary with keys = ['src', 'src_sent_labels', 'segs', 'src_txt', 'tgt_txt']
+            dataset[i]['tgt_txt'] = re.sub(' is ',' is not ', dataset[i]['tgt_txt'])
+            dataset[i]['tgt_txt'] = re.sub(' was ',' was not ', dataset[i]['tgt_txt'])
+            dataset[i]['tgt_txt'] = re.sub(' are ',' are not ', dataset[i]['tgt_txt'])
+            dataset[i]['tgt_txt'] = re.sub(' were ',' were not ', dataset[i]['tgt_txt'])
+            dataset[i]['tgt'] = [1] + tokenizer.encode(dataset[i]['tgt_txt']) + [2]
+        return dataset
+
     # Sort the glob output by file name (by increasing indexes).
     pts = sorted(glob.glob(args.bert_data_path + '.' + corpus_type + '.[0-9]*.bert.pt'))
 
@@ -88,11 +101,18 @@ def load_dataset(args, corpus_type, shuffle):
             random.shuffle(pts)
 
         for pt in pts:
-            yield _lazy_dataset_loader(pt, corpus_type)
+            if args.perturbation:
+                yield _lazy_dataset_loader_with_perturbation(pt, corpus_type, tokenizer)
+            else:
+                yield _lazy_dataset_loader(pt, corpus_type)
     else:
         # Only one inputters.*Dataset, simple!
         pt = args.bert_data_path + '.' + corpus_type + '.bert.pt'
-        yield _lazy_dataset_loader(pt, corpus_type)
+        if args.perturbation:
+            yield _lazy_dataset_loader_with_perturbation(pt, corpus_type, tokenizer)
+        else:
+            yield _lazy_dataset_loader(pt, corpus_type)        
+        
 
 
 def abs_batch_size_fn(new, count):
