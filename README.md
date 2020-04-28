@@ -2,3 +2,4 @@ This is a modified version of the following natural language generation model, w
 
 https://github.com/nlpyang/PreSumm
 
+Usage: See sum_bert.slurm
