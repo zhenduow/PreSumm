@@ -194,96 +194,113 @@ def load_dataset(args, corpus_type, shuffle, tokenizer):
             dataset[i]['tgt'] = [1] + tokenizer.encode(dataset[i]['tgt_txt']) + [2]
         return dataset
 
-    def _lazy_dataset_loader_with_perturbation(pt_file, corpus_type, tokenizer):
+    def _lazy_dataset_loader_with_perturbation(pt_file, corpus_type, tokenizer, perturbation_type):
         dataset = torch.load(pt_file)
         logger.info('Loading %s dataset from %s, number of examples: %d' %
                     (corpus_type, pt_file, len(dataset)))
         random.seed(13)
-        for i, data in enumerate(dataset): # dataset is a list of dictionary with keys = ['src', 'src_sent_labels', 'segs', 'src_txt', 'tgt_txt']
+        
+
+        for i, data in enumerate(dataset): # dataset is a list of dictionary with keys = ['src', 'src_sent_labels', 'segs', 'src_txt', 'tgt_txt']  
+            dataset[i]['tgt_txt'] = re.sub('<q>',' . ', dataset[i]['tgt_txt'])
             tgt_txt = dataset[i]['tgt_txt'].split()
             original_tgt_txt = deepcopy(tgt_txt)
-
-            # if semantic
-            '''
-            change = 0
-            tokenized_text = word_tokenize(' '.join(tgt_txt))
-            pos_tag = nltk.pos_tag(tokenized_text)
-            for pi in range(len(pos_tag)):
-                antonym = ''
-                for syn in wordnet.synsets(pos_tag[pi][0]):
-                    for l in syn.lemmas():
-                        if l.antonyms():
-                            antonym = l.antonyms()[0].name() # get the first antonym of the first lemma
-                            break
-                if antonym != '':
-                    tokenized_text[pi] = antonym
-                    change += 1
-                if change >= 2:
-                    break
-            tgt_txt = tokenized_text
-
-            if tgt_txt == original_tgt_txt:
+            
+            if perturbation_type == 'semantic':
                 change = 0
-                for k in range(len(tgt_txt)):
-                    try:
-                        tgt_txt[k] = semantic_change_simple[tgt_txt[k]]
-                        change += 1
-                    except:
-                        pass
-                    if change >= 2:
-                        break
-            '''
-            # if syntactic
-            
-            sentence_len = len(tgt_txt)
-            done = False
-            while not done:
-                pos = random.sample(range(0, sentence_len-2), 2)
-                tgt_txt[pos[0]] = original_tgt_txt[pos[1]]
-                tgt_txt[pos[1]] = original_tgt_txt[pos[0]]
-                done = True
-                if original_tgt_txt == tgt_txt:
-                    done = False
-            
-            # if grammar
-            '''
-            change = 0
-            for k in range(len(tgt_txt)):
-                try:
-                    tgt_txt[k] = grammar_tweek_negation[tgt_txt[k]]
-                    change += 1
-                except:
-                    pass
-                if change >=2 :
-                    break
+                tokenized_text = word_tokenize(' '.join(tgt_txt))
+                pos_tag = nltk.pos_tag(tokenized_text)
+                for pi in range(len(pos_tag)):
+                    antonym = ''
+                    for syn in wordnet.synsets(pos_tag[pi][0]):
+                        for l in syn.lemmas():
+                            if l.antonyms():
+                                antonym = l.antonyms()[0].name() # get the first antonym of the first lemma
+                                break
+                        if antonym != '':
+                            if change < 2:
+                                tokenized_text[pi] = antonym
+                                change += 1
+                                break
+                tgt_txt = tokenized_text
 
-            
-            if tgt_txt == original_tgt_txt:
-                change =0
-                for k in range(len(tgt_txt)):
-                    try:
-                        tgt_txt[k] = grammar_tweek_custom[tgt_txt[k]]
-                        change += 1
-                    except:
-                        pass
-                    if change >= 2:
-                        break
-            
-            tgt_txt = []
-            if tgt_txt == original_tgt_txt:
-                change = 0
-                for word in original_tgt_txt:
-                    if change >= 2:
-                        tgt_txt.append(word)
-                    else:
-                        new_word = singularize(word)
-                        tgt_txt.append(new_word)
-                        if new_word != word:
+                if tgt_txt == original_tgt_txt:
+                    change = 0
+                    for k in range(len(tgt_txt)):
+                        try:
+                            tgt_txt[k] = semantic_change_simple[tgt_txt[k]]
                             change += 1
-            '''
+                        except:
+                            pass
+                        if change >= 2:
+                            break
+                        
+                dataset[i]['tgt_txt'] = ' '.join(tgt_txt)   
             
-            dataset[i]['tgt_txt'] = ' '.join(tgt_txt)
-            dataset[i]['tgt_txt'] = re.sub('<q>',' . ', dataset[i]['tgt_txt'])
+            elif perturbation_type == 'syntax':
+                sentence_len = len(tgt_txt)
+                pos1 = 0
+                pos2 = -1
+                done = False
+                while not done:
+                    pos1 += 1
+                    pos2 -= 1
+                    tgt_txt[pos1] = original_tgt_txt[pos2]
+                    tgt_txt[pos2] = original_tgt_txt[pos1]
+                    done = True
+                    if original_tgt_txt == tgt_txt:
+                        done = False
+                        
+                dataset[i]['tgt_txt'] = ' '.join(tgt_txt)   
+ 
+            elif perturbation_type == 'grammar':
+                change = 0
+                for k in range(len(tgt_txt)):
+                    try:
+                        tgt_txt[k] = grammar_tweek_negation[tgt_txt[k]]
+                        change += 1
+                    except:
+                        pass
+                    if change >=2 :
+                        break
+
+            
+                if tgt_txt == original_tgt_txt:
+                    change =0
+                    for k in range(len(tgt_txt)):
+                        try:
+                            tgt_txt[k] = grammar_tweek_custom[tgt_txt[k]]
+                            change += 1
+                        except:
+                            pass
+                        if change >= 2:
+                            break
+            
+                if tgt_txt == original_tgt_txt:
+                    tgt_txt = []
+                    change = 0
+                    for word in original_tgt_txt:
+                        if change >= 2:
+                            tgt_txt.append(word)
+                        else:
+                            new_word = singularize(word)
+                            tgt_txt.append(new_word)
+                            if new_word != word:
+                                change += 1
+            
+                dataset[i]['tgt_txt'] = ' '.join(tgt_txt)         
+            
+            elif perturbation_type == 'lead3':
+                dataset[i]['tgt_txt'] = ' '.join(dataset[i]['src_txt'][:3])
+            
+            elif perturbation_type == 'irrelevant':
+                ir = open('logs/irrelevant_dict', 'r').readlines()
+                ir_dict = {}
+                for i in range(len(ir)):
+                    if i % 2 ==0:
+                        ir_dict[ir[i]] = ir[i+1]
+                dataset[i]['tgt_txt'] = ir_dict[dataset[i]['tgt_txt']]       
+
             dataset[i]['tgt'] = [1] + tokenizer.encode(dataset[i]['tgt_txt']) + [2]
         return dataset
 
@@ -296,7 +313,7 @@ def load_dataset(args, corpus_type, shuffle, tokenizer):
 
         for pt in pts:
             if args.perturbation:
-                yield _lazy_dataset_loader_with_perturbation(pt, corpus_type, tokenizer)
+                yield _lazy_dataset_loader_with_perturbation(pt, corpus_type, tokenizer, args.perturbation_type)
             else:
                 yield _lazy_dataset_loader(pt, corpus_type)
     else:

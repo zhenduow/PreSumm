@@ -109,6 +109,7 @@ if __name__ == '__main__':
     parser.add_argument("-block_trigram", type=str2bool, nargs='?', const=True, default=True)
     # perturbation option
     parser.add_argument("-perturbation", type=str2bool, nargs='?', const=False, default=False)
+    parser.add_argument("-perturbation_type", type=str, nargs='?', const=False, default='')
 
     args = parser.parse_args()
     args.gpu_ranks = [int(i) for i in range(len(args.visible_gpus.split(',')))]
