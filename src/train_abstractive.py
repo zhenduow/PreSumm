@@ -219,12 +219,9 @@ def test_abs(args, device_id, pt, step):
     tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case=True, cache_dir=args.temp_dir)
     symbols = {'BOS': tokenizer.vocab['[unused0]'], 'EOS': tokenizer.vocab['[unused1]'],
                'PAD': tokenizer.vocab['[PAD]'], 'EOQ': tokenizer.vocab['[unused2]']}
-    test_iter = data_loader.Dataloader(args, load_dataset(args, 'test', shuffle=False, tokenizer = tokenizer),
-                                       args.test_batch_size, device,
-                                       shuffle=False, is_test=True)
+    test_iter = data_loader.Dataloader(args, load_dataset(args, 'test', shuffle=False, tokenizer = tokenizer),args.test_batch_size, device,shuffle=False, is_test=True)
     predictor = build_predictor(args, tokenizer, symbols, model, logger)
     predictor.translate(test_iter, step)
-
 
 def test_text_abs(args, device_id, pt, step):
     device = "cpu" if args.visible_gpus == '-1' else "cuda"

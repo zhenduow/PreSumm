@@ -14,7 +14,7 @@ from others.logging import logger
 
 
 grammar_tweek_negation = {
-    'is': '',
+    'is': 'are',
     'Is': 'Are',
     'was': 'were',
     'Was': 'Were',
@@ -190,7 +190,7 @@ def load_dataset(args, corpus_type, shuffle, tokenizer):
                     (corpus_type, pt_file, len(dataset)))
         for i, data in enumerate(dataset):
             # replace <q> with period
-            dataset[i]['tgt_txt'] = re.sub('<q>',' . ', dataset[i]['tgt_txt'])
+            dataset[i]['tgt_txt'] = re.sub('<q>',' . ', dataset[i]['tgt_txt']) + '.'  
             dataset[i]['tgt'] = [1] + tokenizer.encode(dataset[i]['tgt_txt']) + [2]
         return dataset
 
@@ -198,16 +198,14 @@ def load_dataset(args, corpus_type, shuffle, tokenizer):
         dataset = torch.load(pt_file)
         logger.info('Loading %s dataset from %s, number of examples: %d' %
                     (corpus_type, pt_file, len(dataset)))
-        random.seed(13)
-        
-
-        for i, data in enumerate(dataset): # dataset is a list of dictionary with keys = ['src', 'src_sent_labels', 'segs', 'src_txt', 'tgt_txt']  
+        for i, data in enumerate(dataset): # dataset is a generator of dictionary with keys = ['src', 'src_sent_labels', 'segs', 'src_txt', 'tgt_txt']  
             dataset[i]['tgt_txt'] = re.sub('<q>',' . ', dataset[i]['tgt_txt'])
             tgt_txt = dataset[i]['tgt_txt'].split()
             original_tgt_txt = deepcopy(tgt_txt)
             
             if perturbation_type == 'semantic':
                 change = 0
+                
                 tokenized_text = word_tokenize(' '.join(tgt_txt))
                 pos_tag = nltk.pos_tag(tokenized_text)
                 for pi in range(len(pos_tag)):
@@ -223,7 +221,7 @@ def load_dataset(args, corpus_type, shuffle, tokenizer):
                                 change += 1
                                 break
                 tgt_txt = tokenized_text
-
+                
                 if tgt_txt == original_tgt_txt:
                     change = 0
                     for k in range(len(tgt_txt)):
@@ -234,8 +232,9 @@ def load_dataset(args, corpus_type, shuffle, tokenizer):
                             pass
                         if change >= 2:
                             break
-                        
-                dataset[i]['tgt_txt'] = ' '.join(tgt_txt)   
+                
+                dataset[i]['tgt_txt'] = ' '.join(tgt_txt) + '.'  
+                
             
             elif perturbation_type == 'syntax':
                 sentence_len = len(tgt_txt)
@@ -251,7 +250,7 @@ def load_dataset(args, corpus_type, shuffle, tokenizer):
                     if original_tgt_txt == tgt_txt:
                         done = False
                         
-                dataset[i]['tgt_txt'] = ' '.join(tgt_txt)   
+                dataset[i]['tgt_txt'] = ' '.join(tgt_txt) + '.'   
  
             elif perturbation_type == 'grammar':
                 change = 0
@@ -288,7 +287,7 @@ def load_dataset(args, corpus_type, shuffle, tokenizer):
                             if new_word != word:
                                 change += 1
             
-                dataset[i]['tgt_txt'] = ' '.join(tgt_txt)         
+                dataset[i]['tgt_txt'] = ' '.join(tgt_txt)  + '.'          
             
             elif perturbation_type == 'lead3':
                 dataset[i]['tgt_txt'] = ' '.join(dataset[i]['src_txt'][:3])
@@ -296,11 +295,14 @@ def load_dataset(args, corpus_type, shuffle, tokenizer):
             elif perturbation_type == 'irrelevant':
                 ir = open('logs/irrelevant_dict', 'r').readlines()
                 ir_dict = {}
-                for i in range(len(ir)):
-                    if i % 2 ==0:
-                        ir_dict[ir[i]] = ir[i+1]
-                dataset[i]['tgt_txt'] = ir_dict[dataset[i]['tgt_txt']]       
-
+                for k in range(len(ir)):
+                    if k % 2 ==0:
+                        ir_dict[ir[k][:-1]] = ir[k+1][:-1]
+                try:
+                    dataset[i]['tgt_txt'] = ir_dict[dataset[i]['tgt_txt']]       
+                except:
+                    print(dataset[i]['tgt_txt'])
+                    pass
             dataset[i]['tgt'] = [1] + tokenizer.encode(dataset[i]['tgt_txt']) + [2]
         return dataset
 
@@ -320,7 +322,7 @@ def load_dataset(args, corpus_type, shuffle, tokenizer):
         # Only one inputters.*Dataset, simple!
         pt = args.bert_data_path + '.' + corpus_type + '.bert.pt'
         if args.perturbation:
-            yield _lazy_dataset_loader_with_perturbation(pt, corpus_type, tokenizer)
+            yield _lazy_dataset_loader_with_perturbation(pt, corpus_type, tokenizer, args.perturbation_type)
         else:
             yield _lazy_dataset_loader(pt, corpus_type)        
         
@@ -366,7 +368,7 @@ class Dataloader(object):
         self.shuffle = shuffle
         self.is_test = is_test
         self.cur_iter = self._next_dataset_iterator(datasets)
-        assert self.cur_iter is not None
+        #assert self.cur_iter is not None
 
     def __iter__(self):
         dataset_iter = (d for d in self.datasets)
@@ -396,7 +398,7 @@ class Dataloader(object):
 
 class DataIterator(object):
     def __init__(self, args, dataset,  batch_size, device=None, is_test=False,
-                 shuffle=True):
+                 shuffle=False):
         self.args = args
         self.batch_size, self.is_test, self.dataset = batch_size, is_test, dataset
         self.iterations = 0
@@ -488,10 +490,13 @@ class DataIterator(object):
         for buffer in self.batch_buffer(data, self.batch_size * 300):
 
             if (self.args.task == 'abs'):
-                p_batch = sorted(buffer, key=lambda x: len(x[2]))
-                p_batch = sorted(p_batch, key=lambda x: len(x[1]))
+                # turn off sorting for consistent output order
+                #p_batch = sorted(buffer, key=lambda x: len(x[2]))
+                #p_batch = sorted(p_batch, key=lambda x: len(x[1]))
+                p_batch = buffer
             else:
-                p_batch = sorted(buffer, key=lambda x: len(x[2]))
+                #p_batch = sorted(buffer, key=lambda x: len(x[2]))
+                p_batch = buffer
 
             p_batch = self.batch(p_batch, self.batch_size)
 

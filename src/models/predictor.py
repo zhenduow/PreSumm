@@ -12,6 +12,7 @@ from tensorboardX import SummaryWriter
 from others.utils import rouge_results_to_str, test_rouge, tile
 from translate.beam import GNMTGlobalScorer
 
+from others.logging import logger, init_logger
 
 def build_predictor(args, tokenizer, symbols, model, logger=None):
     scorer = GNMTGlobalScorer(args.alpha,length_penalty='wu')
@@ -123,7 +124,8 @@ class Translator(object):
     def translate(self,
                   data_iter, step,
                   attn_debug=False):
-
+        
+        init_logger()
         self.model.eval()
         gold_path = self.args.result_path + '.%d.gold' % step
         can_path = self.args.result_path + '.%d.candidate' % step
@@ -146,6 +148,7 @@ class Translator(object):
                     gold_tgt_len = batch.tgt.size(1)
                     self.min_length = gold_tgt_len + 20
                     self.max_length = gold_tgt_len + 60
+                
                 # batch_data = self.translate_batch(batch)
                 batch_data, batch_prob = self.translate_batch(batch)
                 translations = self.from_batch(batch_data)
